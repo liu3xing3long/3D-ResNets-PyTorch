@@ -58,7 +58,8 @@ class ToTensor(object):
             return img.float().div(self.norm_value)
 
         if accimage is not None and isinstance(pic, accimage.Image):
-            nppic = np.zeros([pic.channels, pic.height, pic.width], dtype=np.float32)
+            nppic = np.zeros(
+                [pic.channels, pic.height, pic.width], dtype=np.float32)
             pic.copyto(nppic)
             return torch.from_numpy(nppic)
 
@@ -133,7 +134,9 @@ class Scale(object):
     """
 
     def __init__(self, size, interpolation=Image.BILINEAR):
-        assert isinstance(size, int) or (isinstance(size, collections.Iterable) and len(size) == 2)
+        assert isinstance(size,
+                          int) or (isinstance(size, collections.Iterable) and
+                                   len(size) == 2)
         self.size = size
         self.interpolation = interpolation
 
@@ -194,6 +197,59 @@ class CenterCrop(object):
         pass
 
 
+class CornerCrop(object):
+
+    def __init__(self, size, crop_position=None):
+        self.size = size
+        if crop_position is None:
+            self.randomize = True
+        else:
+            self.randomize = False
+        self.crop_position = crop_position
+        self.crop_positions = ['c', 'tl', 'tr', 'bl', 'br']
+
+    def __call__(self, img):
+        image_width = img.size[0]
+        image_height = img.size[1]
+
+        if self.crop_position == 'c':
+            th, tw = (self.size, self.size)
+            x1 = int(round((image_width - tw) / 2.))
+            y1 = int(round((image_height - th) / 2.))
+            x2 = x1 + tw
+            y2 = y1 + th
+        elif self.crop_position == 'tl':
+            x1 = 0
+            y1 = 0
+            x2 = self.size
+            y2 = self.size
+        elif self.crop_position == 'tr':
+            x1 = image_width - self.size
+            y1 = 0
+            x2 = image_width
+            y2 = self.size
+        elif self.crop_position == 'bl':
+            x1 = 0
+            y1 = image_height - self.size
+            x2 = self.size
+            y2 = image_height
+        elif self.crop_position == 'br':
+            x1 = image_width - self.size
+            y1 = image_height - self.size
+            x2 = image_width
+            y2 = image_height
+
+        img = img.crop((x1, y1, x2, y2))
+
+        return img
+
+    def randomize_parameters(self):
+        if self.randomize:
+            self.crop_position = self.crop_positions[random.randint(
+                0,
+                len(self.crop_positions) - 1)]
+
+
 class RandomHorizontalFlip(object):
     """Horizontally flip the given PIL.Image randomly with a probability of 0.5."""
 
@@ -223,12 +279,16 @@ class MultiScaleCornerCrop(object):
         interpolation: Default: PIL.Image.BILINEAR
     """
 
-    def __init__(self, scales, size, interpolation=Image.BILINEAR):
+    def __init__(self,
+                 scales,
+                 size,
+                 interpolation=Image.BILINEAR,
+                 crop_positions=['c', 'tl', 'tr', 'bl', 'br']):
         self.scales = scales
         self.size = size
         self.interpolation = interpolation
 
-        self.crop_positions = ['c', 'tl', 'tr', 'bl', 'br']
+        self.crop_positions = crop_positions
 
     def __call__(self, img):
         min_length = min(img.size[0], img.size[1])
@@ -252,11 +312,11 @@ class MultiScaleCornerCrop(object):
             y2 = crop_size
         elif self.crop_position == 'tr':
             x1 = image_width - crop_size
-            y1 = 1
+            y1 = 0
             x2 = image_width
             y2 = crop_size
         elif self.crop_position == 'bl':
-            x1 = 1
+            x1 = 0
             y1 = image_height - crop_size
             x2 = crop_size
             y2 = image_height
@@ -272,4 +332,35 @@ class MultiScaleCornerCrop(object):
 
     def randomize_parameters(self):
         self.scale = self.scales[random.randint(0, len(self.scales) - 1)]
-        self.crop_position = self.crop_positions[random.randint(0, len(self.scales) - 1)]
+        self.crop_position = self.crop_positions[random.randint(
+            0,
+            len(self.scales) - 1)]
+
+
+class MultiScaleRandomCrop(object):
+
+    def __init__(self, scales, size, interpolation=Image.BILINEAR):
+        self.scales = scales
+        self.size = size
+        self.interpolation = interpolation
+
+    def __call__(self, img):
+        min_length = min(img.size[0], img.size[1])
+        crop_size = int(min_length * self.scale)
+
+        image_width = img.size[0]
+        image_height = img.size[1]
+
+        x1 = self.tl_x * (image_width - crop_size)
+        y1 = self.tl_y * (image_height - crop_size)
+        x2 = x1 + crop_size
+        y2 = y1 + crop_size
+
+        img = img.crop((x1, y1, x2, y2))
+
+        return img.resize((self.size, self.size), self.interpolation)
+
+    def randomize_parameters(self):
+        self.scale = self.scales[random.randint(0, len(self.scales) - 1)]
+        self.tl_x = random.random()
+        self.tl_y = random.random()
